@@ -17,16 +17,22 @@ import {
   FileSpreadsheet, 
   Heart, 
   Info, 
-  Sparkles,
-  Award,
-  Sun,
-  Moon
+  Sparkles, 
+  Award, 
+  Sun, 
+  Moon,
+  LogOut,
+  Lock,
+  Unlock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 const LOCAL_STORAGE_VOLUNTEERS = 'escalarotativa_v1_volunteers';
 const LOCAL_STORAGE_SCALE = 'escalarotativa_v1_scale';
 const LOCAL_STORAGE_AVAILABILITY = 'escalarotativa_v1_availability';
 const LOCAL_STORAGE_DARKMODE = 'escalarotativa_v1_darkmode';
+const LOCAL_STORAGE_AUTH = 'escalarotativa_v1_auth';
 
 const DEFAULT_VOLUNTEERS: Volunteer[] = [
   { id: 'vol-1', name: 'Ana Silva', phone: '912345678', active: true },
@@ -44,6 +50,45 @@ export default function App() {
   const [currentMonthIndex, setCurrentMonthIndex] = useState(4); // Default to May 2026 (index 4)
   const [activeTab, setActiveTab] = useState<'escala' | 'equipe' | 'disponibilidades'>('escala');
   
+  // 0.0. STATE - AUTHENTICATION GATED SYSTEM
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_AUTH);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return false;
+  });
+
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [authError, setAuthError] = useState('');
+
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const VALID_PASSWORDS = ['escala2026', 'escala', 'membros2026', 'membros'];
+    const cleanPass = passwordInput.trim().toLowerCase();
+    
+    if (VALID_PASSWORDS.includes(cleanPass)) {
+      setIsAuthenticated(true);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_AUTH, JSON.stringify(true));
+      } catch (err) {}
+      setPasswordInput('');
+      setAuthError('');
+    } else {
+      setAuthError('Palavra-passe de acesso inválida ou incorreta.');
+    }
+  };
+
+  const handleLogout = () => {
+    if (window.confirm('Deseja realmente terminar a sua sessão?')) {
+      setIsAuthenticated(false);
+      try {
+        localStorage.removeItem(LOCAL_STORAGE_AUTH);
+      } catch (err) {}
+    }
+  };
+
   // 0. STATE - DARK MODE
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     try {
@@ -331,6 +376,77 @@ export default function App() {
     };
   }, [volunteers, scale, currentWeekends]);
 
+  // LOGIN SCREEN RENDER FORCE GATES
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#FEF7FF] text-[#1D1B20] dark:bg-[#141218] dark:text-[#E6E1E5] flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white dark:bg-[#1F1D24] border border-[#CAC4D0] dark:border-[#49454F] rounded-[28px] p-8 shadow-md space-y-6">
+          <div className="text-center space-y-3">
+            <div className="w-14 h-14 bg-[#6750A4] dark:bg-[#D0BCFF] rounded-2xl flex items-center justify-center text-white dark:text-[#381E72] font-black text-2xl mx-auto shadow-sm">
+              ER
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-[#6750A4] dark:text-[#D0BCFF] tracking-tight">Escala Rotativa</h1>
+              <p className="text-[10px] text-[#49454F] dark:text-[#CAC4D0] tracking-widest uppercase font-black">
+                Acesso Restrito a Membros
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleLoginSubmit} className="space-y-4">
+            {authError && (
+              <div className="text-xs text-red-700 dark:text-red-350 bg-red-50 dark:bg-red-950/20 px-4 py-3 rounded-xl border border-red-200 dark:border-red-900/60 font-semibold text-center">
+                {authError}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="block text-[10px] font-black text-[#514b51] dark:text-[#CAC4D0] uppercase tracking-wider">
+                Palavra-passe de Acesso
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="Introduza a palavra-passe..."
+                  className="w-full pl-4 pr-12 py-3 bg-[#FEF7FF] dark:bg-[#2B2930] border border-[#79747E] dark:border-[#49454F] rounded-full text-xs font-semibold focus:outline-none focus:border-[#6750A4] dark:focus:border-[#D0BCFF] focus:ring-1 focus:ring-[#EADDFF] dark:focus:ring-[#4F378B] text-[#1D1B20] dark:text-[#E6E1E5]"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-[#6750A4] dark:text-[#D0BCFF] hover:underline cursor-pointer"
+                >
+                  {showPassword ? "Ocultar" : "Mostrar"}
+                </button>
+              </div>
+              <p className="text-[10px] text-[#79747E] dark:text-[#938F99] text-center pt-2">
+                Dica: Utilize a palavra-passe de acesso geral de membros
+              </p>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 bg-[#6750A4] dark:bg-[#D0BCFF] text-white dark:text-[#381E72] rounded-full font-bold shadow-xs hover:shadow-md transition-all text-sm cursor-pointer"
+            >
+              Entrar no Sistema
+            </button>
+          </form>
+
+          <div className="pt-2 text-center">
+            <button
+              onClick={() => setIsDarkMode(prev => !prev)}
+              className="inline-flex items-center gap-1.5 text-xs text-[#79747E] dark:text-[#938F99] hover:text-[#6750A4] dark:hover:text-[#D0BCFF] font-semibold cursor-pointer"
+            >
+              {isDarkMode ? "Modo Claro" : "Modo Escuro"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#FEF7FF] text-[#1D1B20] dark:bg-[#141218] dark:text-[#E6E1E5] flex flex-col pb-24 md:pb-6" id="app-root-container">
       {/* Visual top bar header - Desktop Version styled as material 3 Sleek top bar */}
@@ -345,7 +461,7 @@ export default function App() {
             <div>
               <h1 className="text-xl font-black text-[#6750A4] dark:text-[#D0BCFF] tracking-tight">Escala Rotativa</h1>
               <p className="text-[10px] text-[#49454F] dark:text-[#CAC4D0] tracking-widest uppercase font-black">
-                Gestão Equitativa de Voluntariado — 2026
+                Gestão Equitativa de Escalas — 2026
               </p>
             </div>
           </div>
@@ -400,6 +516,16 @@ export default function App() {
             >
               {isDarkMode ? <Sun size={15} /> : <Moon size={15} />}
             </button>
+
+            {/* Desktop Logout Button */}
+            <button
+              id="btn-logout-desktop"
+              onClick={handleLogout}
+              className="p-2.5 ml-2 bg-white dark:bg-[#2B2930] hover:bg-red-50 dark:hover:bg-red-950/20 border border-[#CAC4D0] dark:border-[#49454F] text-red-600 dark:text-red-400 rounded-full transition-all shadow-xs cursor-pointer flex items-center justify-center"
+              title="Terminar Sessão (Sair)"
+            >
+              <LogOut size={15} />
+            </button>
           </div>
         </div>
       </header>
@@ -416,15 +542,27 @@ export default function App() {
           </div>
         </div>
 
-        {/* Mobile Dark Mode Toggle */}
-        <button
-          id="btn-dark-mode-mobile"
-          onClick={() => setIsDarkMode(prev => !prev)}
-          className="p-2 bg-white dark:bg-[#2B2930] hover:bg-[#F3EDF7] dark:hover:bg-[#49454F] border border-[#CAC4D0] dark:border-[#49454F] text-[#49454F] dark:text-[#CAC4D0] rounded-full transition-all cursor-pointer"
-          title={isDarkMode ? "Mudar para modo claro" : "Mudar para modo escuro"}
-        >
-          {isDarkMode ? <Sun size={14} /> : <Moon size={14} />}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Mobile Dark Mode Toggle */}
+          <button
+            id="btn-dark-mode-mobile"
+            onClick={() => setIsDarkMode(prev => !prev)}
+            className="p-2 bg-white dark:bg-[#2B2930] hover:bg-[#F3EDF7] dark:hover:bg-[#49454F] border border-[#CAC4D0] dark:border-[#49454F] text-[#49454F] dark:text-[#CAC4D0] rounded-full transition-all cursor-pointer"
+            title={isDarkMode ? "Mudar para modo claro" : "Mudar para modo escuro"}
+          >
+            {isDarkMode ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
+
+          {/* Mobile Logout Toggle */}
+          <button
+            id="btn-logout-mobile"
+            onClick={handleLogout}
+            className="p-2 bg-white dark:bg-[#2B2930] hover:bg-red-50 dark:hover:bg-red-950/25 border border-[#CAC4D0] dark:border-[#49454F] text-red-650 dark:text-red-400 rounded-full transition-all cursor-pointer"
+            title="Terminar Sessão"
+          >
+            <LogOut size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Main Container Content */}

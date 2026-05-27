@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { Volunteer, MonthlyScale, ScheduledWeekend } from '../types';
-import { Plus, Edit2, Trash2, Check, X, Smartphone, UserCheck, UserX, MessageSquare } from 'lucide-react';
+import { Plus, Edit2, Trash2, Check, X, Smartphone, UserCheck, UserX, MessageSquare, Eye, EyeOff } from 'lucide-react';
 import { getWhatsappLink } from '../utils/dateUtils';
 
 interface VolunteerManagerProps {
@@ -36,6 +36,22 @@ export function VolunteerManager({
 
   // Form states for ADD new volunteer
   const [isAdding, setIsAdding] = useState(false);
+
+  // Mask / Reveal toggle state for phone numbers
+  const [revealedPhones, setRevealedPhones] = useState<Record<string, boolean>>({});
+
+  const togglePhoneReveal = (id: string) => {
+    setRevealedPhones(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const getMaskedPhone = (phone: string, id: string) => {
+    if (revealedPhones[id]) {
+      return formatPhone(phone);
+    }
+    const clean = phone.replace(/\D/g, '');
+    if (clean.length < 9) return phone;
+    return `${clean.slice(0, 3)} ••• •••`;
+  };
 
   // Calculate shifts count for current month
   const getShiftCount = (vId: string) => {
@@ -274,11 +290,25 @@ export function VolunteerManager({
 
                 {/* Sub info */}
                 <div className="space-y-2 text-xs text-[#49454F] dark:text-[#CAC4D0] pt-1">
-                  <div className="flex items-center gap-2">
-                    <Smartphone size={12} className="text-[#6750A4] dark:text-[#D0BCFF]" />
-                    <span className="font-mono font-bold text-[#1D1B20] dark:text-[#E6E1E5] text-xs">{phoneDisplay || 'Sem telefone'}</span>
+                  <div className="flex items-center justify-between gap-2 bg-gray-50/50 dark:bg-[#2B2930]/30 py-1 px-2.5 rounded-xl border border-[#E7E0EC]/40 dark:border-[#49454F]/30">
+                    <div className="flex items-center gap-2">
+                      <Smartphone size={12} className="text-[#6750A4] dark:text-[#D0BCFF]" />
+                      <span className="font-mono font-bold text-[#1D1B20] dark:text-[#E6E1E5] text-xs">
+                        {vol.phone ? getMaskedPhone(vol.phone, vol.id) : 'Sem telefone'}
+                      </span>
+                    </div>
+                    {vol.phone && (
+                      <button
+                        type="button"
+                        onClick={() => togglePhoneReveal(vol.id)}
+                        className="text-[#79747E] dark:text-[#938F99] hover:text-[#6750A4] dark:hover:text-[#D0BCFF] transition-all p-0.5 rounded cursor-pointer"
+                        title={revealedPhones[vol.id] ? "Ocultar número" : "Mostrar número completo"}
+                      >
+                        {revealedPhones[vol.id] ? <EyeOff size={13} /> : <Eye size={13} />}
+                      </button>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 px-1">
                     <div className="w-5 h-5 flex items-center justify-center bg-[#6750A4] dark:bg-[#D0BCFF] text-white dark:text-[#381E72] font-mono text-[9px] font-black rounded-full">
                       {shiftCount}
                     </div>

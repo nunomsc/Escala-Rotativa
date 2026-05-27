@@ -260,7 +260,9 @@ export function ScaleReportModal({
                           <tr key={idx} className={`hover:bg-gray-50/50 dark:hover:bg-[#49454F]/10 print:hover:bg-transparent ${v.active ? '' : 'opacity-65 print:opacity-50'}`}>
                             <td className="py-3 px-3">
                               <span className="font-bold text-[#1D1B20] dark:text-[#E6E1E5] block">{v.name}</span>
-                              <span className="text-[10px] text-[#49454F] dark:text-[#CAC4D0] block mt-0.5">{v.phone}</span>
+                              <span className="text-[10px] text-[#49454F] dark:text-[#CAC4D0] block mt-0.5">
+                                {v.phone ? `${v.phone.replace(/\D/g, '').slice(0, 3)} ••• •••` : ''}
+                              </span>
                             </td>
                             <td className="py-3 px-3">
                               {v.active ? (
