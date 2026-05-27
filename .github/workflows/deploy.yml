@@ -3,32 +3,27 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches:
-      - main # ou master, dependendo do nome da sua branch principal
+      - main
+      - master
 
 permissions:
   contents: write
 
 jobs:
   build-and-deploy:
+    concurrency: ci-${{ github.ref }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout 🛎️
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
+      - name: Install and Build 🔧
+        run: |
+          npm ci
+          npm run build
 
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Build Application
-        run: npm run build
-
-      - name: Deploy to GitHub Pages
+      - name: Deploy 🚀
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          folder: dist # Pasta que o Vite gera
-          branch: gh-pages # Branch para onde os ficheiros estáticos vão
+          folder: dist # Pasta gerada pelo build
+          branch: gh-pages # Branch de destino (será criada automaticamente)
