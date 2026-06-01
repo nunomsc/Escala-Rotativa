@@ -27,11 +27,14 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from './lib/firebase';
+import { db, handleFirestoreError, OperationType, isFirebaseConfigured } from './lib/firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 const LOCAL_STORAGE_DARKMODE = 'escalarotativa_v1_darkmode';
 const LOCAL_STORAGE_AUTH = 'escalarotativa_v1_auth';
+const OFFLINE_VOLUNTEERS_KEY = 'escalarotativa_v1_offline_volunteers';
+const OFFLINE_SCALE_KEY = 'escalarotativa_v1_offline_scale';
+const OFFLINE_AVAILABILITY_KEY = 'escalarotativa_v1_offline_availability';
 
 const DEFAULT_VOLUNTEERS: Volunteer[] = [
   { id: 'vol-1', name: 'Ana Silva', phone: '912345678', active: true },
@@ -130,7 +133,7 @@ export default function App() {
 
   // Live Firebase Synchronizations
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !isFirebaseConfigured) return;
 
     const unsubscribe = onSnapshot(
       collection(db, 'volunteers'),
@@ -169,7 +172,7 @@ export default function App() {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !isFirebaseConfigured) return;
 
     const unsubscribe = onSnapshot(
       collection(db, 'availability'),
@@ -190,7 +193,7 @@ export default function App() {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !isFirebaseConfigured) return;
 
     const unsubscribe = onSnapshot(
       collection(db, 'scale'),
@@ -211,6 +214,37 @@ export default function App() {
     );
 
     return () => unsubscribe();
+  }, [isAuthenticated]);
+
+  // Local Offline State Initialization Fallback
+  useEffect(() => {
+    if (!isAuthenticated || isFirebaseConfigured) return;
+
+    try {
+      const storedVols = localStorage.getItem(OFFLINE_VOLUNTEERS_KEY);
+      if (storedVols) {
+        setVolunteers(JSON.parse(storedVols));
+      } else {
+        localStorage.setItem(OFFLINE_VOLUNTEERS_KEY, JSON.stringify(DEFAULT_VOLUNTEERS));
+        setVolunteers(DEFAULT_VOLUNTEERS);
+      }
+
+      const storedScale = localStorage.getItem(OFFLINE_SCALE_KEY);
+      if (storedScale) {
+        setScale(JSON.parse(storedScale));
+      } else {
+        setScale({});
+      }
+
+      const storedAvail = localStorage.getItem(OFFLINE_AVAILABILITY_KEY);
+      if (storedAvail) {
+        setAvailability(JSON.parse(storedAvail));
+      } else {
+        setAvailability({});
+      }
+    } catch (e) {
+      console.error("Local storage initialization failed:", e);
+    }
   }, [isAuthenticated]);
 
   // Recalculate weekends whenever month or year change
@@ -246,6 +280,13 @@ export default function App() {
   // 1. VOLUNTEERS MUTATIONS
   const handleAddVolunteer = async (name: string, phone: string, active: boolean) => {
     const id = `vol-${Date.now()}`;
+    if (!isFirebaseConfigured) {
+      const updated = [...volunteers, { id, name, phone, active }];
+      updated.sort((a, b) => a.name.localeCompare(b.name));
+      setVolunteers(updated);
+      localStorage.setItem(OFFLINE_VOLUNTEERS_KEY, JSON.stringify(updated));
+      return;
+    }
     try {
       await setDoc(doc(db, 'volunteers', id), { name, phone, active });
     } catch (error) {
@@ -254,6 +295,13 @@ export default function App() {
   };
 
   const handleEditVolunteer = async (id: string, name: string, phone: string, active: boolean) => {
+    if (!isFirebaseConfigured) {
+      const updated = volunteers.map(v => v.id === id ? { id, name, phone, active } : v);
+      updated.sort((a, b) => a.name.localeCompare(b.name));
+      setVolunteers(updated);
+      localStorage.setItem(OFFLINE_VOLUNTEERS_KEY, JSON.stringify(updated));
+      return;
+    }
     try {
       await setDoc(doc(db, 'volunteers', id), { name, phone, active });
     } catch (error) {
@@ -262,6 +310,17 @@ export default function App() {
   };
 
   const handleDeleteVolunteer = async (id: string) => {
+    if (!isFirebaseConfigured) {
+      const updatedVols = volunteers.filter(v => v.id !== id);
+      setVolunteers(updatedVols);
+      localStorage.setItem(OFFLINE_VOLUNTEERS_KEY, JSON.stringify(updatedVols));
+
+      const updatedAvail = { ...availability };
+      delete updatedAvail[id];
+      setAvailability(updatedAvail);
+      localStorage.setItem(OFFLINE_AVAILABILITY_KEY, JSON.stringify(updatedAvail));
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'volunteers', id));
       await deleteDoc(doc(db, 'availability', id));
@@ -273,6 +332,12 @@ export default function App() {
   const handleToggleActive = async (id: string) => {
     const target = volunteers.find(v => v.id === id);
     if (target) {
+      if (!isFirebaseConfigured) {
+        const updated = volunteers.map(v => v.id === id ? { ...v, active: !v.active } : v);
+        setVolunteers(updated);
+        localStorage.setItem(OFFLINE_VOLUNTEERS_KEY, JSON.stringify(updated));
+        return;
+      }
       try {
         await setDoc(doc(db, 'volunteers', id), {
           name: target.name,
@@ -287,9 +352,15 @@ export default function App() {
 
   // 2. AVAILABILITY MUTATIONS
   const handleUpdateAvailability = async (volunteerId: string, dateStr: string, isAvailable: boolean) => {
+    const volMap = availability[volunteerId] || {};
+    const newDates = { ...volMap, [dateStr]: isAvailable };
+    if (!isFirebaseConfigured) {
+      const updated = { ...availability, [volunteerId]: newDates };
+      setAvailability(updated);
+      localStorage.setItem(OFFLINE_AVAILABILITY_KEY, JSON.stringify(updated));
+      return;
+    }
     try {
-      const volMap = availability[volunteerId] || {};
-      const newDates = { ...volMap, [dateStr]: isAvailable };
       await setDoc(doc(db, 'availability', volunteerId), { dates: newDates });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `availability/${volunteerId}`);
@@ -297,11 +368,17 @@ export default function App() {
   };
 
   const handleSetBulkAvailability = async (volunteerId: string, dates: string[], isAvailable: boolean) => {
+    const volMap = { ...(availability[volunteerId] || {}) };
+    for (const dateStr of dates) {
+      volMap[dateStr] = isAvailable;
+    }
+    if (!isFirebaseConfigured) {
+      const updated = { ...availability, [volunteerId]: volMap };
+      setAvailability(updated);
+      localStorage.setItem(OFFLINE_AVAILABILITY_KEY, JSON.stringify(updated));
+      return;
+    }
     try {
-      const volMap = { ...(availability[volunteerId] || {}) };
-      for (const dateStr of dates) {
-        volMap[dateStr] = isAvailable;
-      }
       await setDoc(doc(db, 'availability', volunteerId), { dates: volMap });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `availability/${volunteerId}`);
@@ -323,6 +400,27 @@ export default function App() {
       availability
     );
     
+    if (!isFirebaseConfigured) {
+      const newScale = { ...scale };
+      for (const w of currentWeekends) {
+        if (updatedScale[w.fridayStr]) {
+          newScale[w.fridayStr] = {
+            volunteers: updatedScale[w.fridayStr].volunteers || [],
+            locked: updatedScale[w.fridayStr].locked || false
+          };
+        }
+        if (updatedScale[w.saturdayStr]) {
+          newScale[w.saturdayStr] = {
+            volunteers: updatedScale[w.saturdayStr].volunteers || [],
+            locked: updatedScale[w.saturdayStr].locked || false
+          };
+        }
+      }
+      setScale(newScale);
+      localStorage.setItem(OFFLINE_SCALE_KEY, JSON.stringify(newScale));
+      return;
+    }
+
     try {
       const promises = [];
       for (const w of currentWeekends) {
@@ -346,6 +444,21 @@ export default function App() {
   };
 
   const handleClearScale = async () => {
+    if (!isFirebaseConfigured) {
+      const newScale = { ...scale };
+      for (const w of currentWeekends) {
+        if (!scale[w.fridayStr]?.locked) {
+          newScale[w.fridayStr] = { volunteers: [], locked: false };
+        }
+        if (!scale[w.saturdayStr]?.locked) {
+          newScale[w.saturdayStr] = { volunteers: [], locked: false };
+        }
+      }
+      setScale(newScale);
+      localStorage.setItem(OFFLINE_SCALE_KEY, JSON.stringify(newScale));
+      return;
+    }
+
     try {
       const promises = [];
       for (const w of currentWeekends) {
@@ -369,11 +482,25 @@ export default function App() {
   };
 
   const handleToggleLock = async (dateStr: string) => {
+    const turn = scale[dateStr] || { volunteers: [], locked: false };
+    const nextLocked = !turn.locked;
+    if (!isFirebaseConfigured) {
+      const newScale = {
+        ...scale,
+        [dateStr]: {
+          volunteers: turn.volunteers || [],
+          locked: nextLocked
+        }
+      };
+      setScale(newScale);
+      localStorage.setItem(OFFLINE_SCALE_KEY, JSON.stringify(newScale));
+      return;
+    }
+
     try {
-      const turn = scale[dateStr] || { volunteers: [], locked: false };
       await setDoc(doc(db, 'scale', dateStr), {
         volunteers: turn.volunteers || [],
-        locked: !turn.locked
+        locked: nextLocked
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `scale/${dateStr}`);
@@ -381,13 +508,27 @@ export default function App() {
   };
 
   const handleSwapVolunteer = async (dateStr: string, slotIndex: number, volunteerId: string) => {
+    const turn = scale[dateStr] || { volunteers: [], locked: false };
+    const currentVolunteers = [...(turn.volunteers || [])];
+    while (currentVolunteers.length <= slotIndex) {
+      currentVolunteers.push("");
+    }
+    currentVolunteers[slotIndex] = volunteerId;
+
+    if (!isFirebaseConfigured) {
+      const newScale = {
+        ...scale,
+        [dateStr]: {
+          volunteers: currentVolunteers,
+          locked: turn.locked || false
+        }
+      };
+      setScale(newScale);
+      localStorage.setItem(OFFLINE_SCALE_KEY, JSON.stringify(newScale));
+      return;
+    }
+
     try {
-      const turn = scale[dateStr] || { volunteers: [], locked: false };
-      const currentVolunteers = [...(turn.volunteers || [])];
-      while (currentVolunteers.length <= slotIndex) {
-        currentVolunteers.push("");
-      }
-      currentVolunteers[slotIndex] = volunteerId;
       await setDoc(doc(db, 'scale', dateStr), {
         volunteers: currentVolunteers,
         locked: turn.locked || false
@@ -623,6 +764,16 @@ export default function App() {
 
       {/* Main Container Content */}
       <main className="max-w-7xl w-full mx-auto px-4 md:px-6 py-6 flex-1 space-y-6">
+        
+        {!isFirebaseConfigured && (
+          <div className="bg-amber-50 dark:bg-[#2c1d11] border border-amber-200 dark:border-amber-900/30 rounded-2xl p-4 flex gap-3 text-amber-900 dark:text-amber-200 text-xs leading-relaxed" id="offline-mode-warning">
+            <Info size={18} className="text-amber-600 dark:text-amber-400 shrink-0" />
+            <div>
+              <span className="font-bold block text-sm mb-0.5 text-amber-950 dark:text-amber-100">Modo de Demonstração Local Ativo</span>
+              O ficheiro de ligação à base de dados em tempo real (<code className="font-mono text-[11px] bg-amber-100 dark:bg-amber-950/40 px-1 rounded">firebase-applet-config.json</code>) não foi integrado no repositório. Quaisquer alterações que fizer serão gravadas apenas no seu navegador atual e não serão partilhadas com outros membros em tempo real.
+            </div>
+          </div>
+        )}
         
         {/* Quick Bento Stats Overview */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4" id="stats-bento-grid">

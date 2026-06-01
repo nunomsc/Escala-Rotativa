@@ -17,9 +17,24 @@ const firebaseConfig = {
   firestoreDatabaseId: metaEnv.VITE_FIREBASE_DATABASE_ID || localConfig.firestoreDatabaseId || (localConfig as any).firestoreDatabaseId || '',
 };
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+export const isFirebaseConfigured = !!(firebaseConfig.apiKey && firebaseConfig.projectId);
+
+let app: any = null;
+let db: any = null;
+let auth: any = null;
+
+if (isFirebaseConfigured) {
+  try {
+    app = initializeApp(firebaseConfig);
+    db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    auth = getAuth(app);
+  } catch (err) {
+    console.error("Firebase failed to initialize:", err);
+  }
+}
+
+export { app, db, auth };
+
 
 export enum OperationType {
   CREATE = 'create',
