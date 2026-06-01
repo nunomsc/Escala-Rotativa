@@ -1,0 +1,77 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity Validations
+
+    // Volunteer Schema Validation
+    function isValidVolunteer(data) {
+      return data.keys().hasAll(['name', 'phone', 'active'])
+        && data.keys().size() == 3
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 128
+        && data.phone is string && data.phone.size() <= 32
+        && data.active is bool;
+    }
+
+    // Availability Schema Validation
+    function isValidAvailability(data) {
+      return data.keys().hasAll(['dates'])
+        && data.keys().size() == 1
+        && data.dates is map;
+    }
+
+    // ScaleTurn Schema Validation
+    function isValidScaleTurn(data) {
+      return data.keys().hasAll(['volunteers', 'locked'])
+        && data.keys().size() == 2
+        && data.volunteers is list
+        && data.volunteers.size() <= 20
+        && data.locked is bool;
+    }
+
+    // Paths
+    match /volunteers/{volunteerId} {
+      allow read, get, list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(volunteerId) && isValidVolunteer(incoming());
+      allow update: if isSignedIn() && isValidId(volunteerId) && isValidVolunteer(incoming());
+      allow delete: if isSignedIn() && isValidId(volunteerId);
+    }
+
+    match /availability/{volunteerId} {
+      allow read, get, list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(volunteerId) && isValidAvailability(incoming());
+      allow update: if isSignedIn() && isValidId(volunteerId) && isValidAvailability(incoming());
+      allow delete: if isSignedIn() && isValidId(volunteerId);
+    }
+
+    match /scale/{dateStr} {
+      allow read, get, list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(dateStr) && isValidScaleTurn(incoming());
+      allow update: if isSignedIn() && isValidId(dateStr) && isValidScaleTurn(incoming());
+      allow delete: if isSignedIn() && isValidId(dateStr);
+    }
+
+  }
+}

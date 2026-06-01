@@ -1,0 +1,75 @@
+{
+  "entities": {
+    "Volunteer": {
+      "title": "Volunteer",
+      "description": "A volunteer registered in the system",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Full name of the volunteer"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Phone number of the volunteer"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the volunteer is active"
+        }
+      },
+      "required": [
+        "name",
+        "phone",
+        "active"
+      ]
+    },
+    "Availability": {
+      "title": "Availability",
+      "description": "Selected available dates for a volunteer",
+      "type": "object",
+      "properties": {
+        "dates": {
+          "type": "object",
+          "description": "Map from YYYY-MM-DD date strings to booleans"
+        }
+      },
+      "required": [
+        "dates"
+      ]
+    },
+    "ScaleTurn": {
+      "title": "ScaleTurn",
+      "description": "Scale assignment for a specific day",
+      "type": "object",
+      "properties": {
+        "volunteers": {
+          "type": "array",
+          "description": "User IDs of volunteers assigned"
+        },
+        "locked": {
+          "type": "boolean",
+          "description": "Whether this day is locked from auto-generation"
+        }
+      },
+      "required": [
+        "volunteers",
+        "locked"
+      ]
+    }
+  },
+  "firestore": {
+    "/volunteers/{volunteerId}": {
+      "schema": "Volunteer",
+      "description": "List of all volunteers"
+    },
+    "/availability/{volunteerId}": {
+      "schema": "Availability",
+      "description": "Selected available dates mapped to each volunteer"
+    },
+    "/scale/{dateStr}": {
+      "schema": "ScaleTurn",
+      "description": "Assigned volunteers and lock status for a specific weekend day"
+    }
+  }
+}

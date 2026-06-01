@@ -27,10 +27,9 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
+import { db, handleFirestoreError, OperationType } from './lib/firebase';
+import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
-const LOCAL_STORAGE_VOLUNTEERS = 'escalarotativa_v1_volunteers';
-const LOCAL_STORAGE_SCALE = 'escalarotativa_v1_scale';
-const LOCAL_STORAGE_AVAILABILITY = 'escalarotativa_v1_availability';
 const LOCAL_STORAGE_DARKMODE = 'escalarotativa_v1_darkmode';
 const LOCAL_STORAGE_AUTH = 'escalarotativa_v1_auth';
 
@@ -69,10 +68,10 @@ export default function App() {
     const cleanPass = passwordInput.trim().toLowerCase();
     
     if (VALID_PASSWORDS.includes(cleanPass)) {
-      setIsAuthenticated(true);
       try {
         localStorage.setItem(LOCAL_STORAGE_AUTH, JSON.stringify(true));
       } catch (err) {}
+      setIsAuthenticated(true);
       setPasswordInput('');
       setAuthError('');
     } else {
@@ -117,75 +116,103 @@ export default function App() {
   const todayDate = useMemo(() => new Date(2026, 4, 26, 12, 0, 0), []);
 
   // 1. STATE - VOLUNTEERS
-  const [volunteers, setVolunteers] = useState<Volunteer[]>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_VOLUNTEERS);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error("Erro lendo localStorage para voluntários", e);
-    }
-    return DEFAULT_VOLUNTEERS;
-  });
+  const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
 
   // 2. STATE - ROTATION SCALE
-  const [scale, setScale] = useState<MonthlyScale>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_SCALE);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error("Erro lendo localStorage para escala", e);
-    }
-    return {};
-  });
+  const [scale, setScale] = useState<MonthlyScale>({});
 
   // 3. STATE - AVAILABILITY
-  const [availability, setAvailability] = useState<VolunteerAvailability>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_AVAILABILITY);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error("Erro lendo localStorage para disponibilidade", e);
-    }
-    return {};
-  });
+  const [availability, setAvailability] = useState<VolunteerAvailability>({});
 
-  // Persist states to localStorage whenever they change
+  // Live Firebase Synchronizations
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_VOLUNTEERS, JSON.stringify(volunteers));
-  }, [volunteers]);
+    if (!isAuthenticated) return;
+
+    const unsubscribe = onSnapshot(
+      collection(db, 'volunteers'),
+      async (snapshot) => {
+        const volsList: Volunteer[] = [];
+        snapshot.forEach((docSnap) => {
+          volsList.push({ id: docSnap.id, ...docSnap.data() } as Volunteer);
+        });
+
+        // Seed with default volunteers if completely empty
+        if (volsList.length === 0) {
+          try {
+            const promises = DEFAULT_VOLUNTEERS.map(v => 
+              setDoc(doc(db, 'volunteers', v.id), {
+                name: v.name,
+                phone: v.phone,
+                active: v.active
+              })
+            );
+            await Promise.all(promises);
+          } catch (err) {
+            console.error("Erro ao semear voluntários padrão:", err);
+          }
+        } else {
+          // Sort alphabetically by name
+          volsList.sort((a, b) => a.name.localeCompare(b.name));
+          setVolunteers(volsList);
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'volunteers');
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isAuthenticated]);
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_SCALE, JSON.stringify(scale));
-  }, [scale]);
+    if (!isAuthenticated) return;
+
+    const unsubscribe = onSnapshot(
+      collection(db, 'availability'),
+      (snapshot) => {
+        const availMap: VolunteerAvailability = {};
+        snapshot.forEach((docSnap) => {
+          const docData = docSnap.data();
+          availMap[docSnap.id] = docData.dates || {};
+        });
+        setAvailability(availMap);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'availability');
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isAuthenticated]);
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_AVAILABILITY, JSON.stringify(availability));
-  }, [availability]);
+    if (!isAuthenticated) return;
+
+    const unsubscribe = onSnapshot(
+      collection(db, 'scale'),
+      (snapshot) => {
+        const scaleMap: MonthlyScale = {};
+        snapshot.forEach((docSnap) => {
+          const docData = docSnap.data();
+          scaleMap[docSnap.id] = {
+            volunteers: docData.volunteers || [],
+            locked: docData.locked || false
+          };
+        });
+        setScale(scaleMap);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'scale');
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isAuthenticated]);
 
   // Recalculate weekends whenever month change
   const currentWeekends = useMemo(() => {
     return getWeekendsOfMonth(currentYear, currentMonthIndex);
   }, [currentMonthIndex]);
-
-  // Pre-generate a nice initial schedule on absolute first-time mount
-  useEffect(() => {
-    const isFirstTime = !localStorage.getItem(LOCAL_STORAGE_SCALE);
-    if (isFirstTime && volunteers.length > 0) {
-      const autoMay = generateAutomatedScale(
-        volunteers.filter(v => v.active),
-        getWeekendsOfMonth(2026, 4), // May
-        {},
-        {}
-      );
-      const autoJune = generateAutomatedScale(
-        volunteers.filter(v => v.active),
-        getWeekendsOfMonth(2026, 5), // June
-        autoMay,
-        {}
-      );
-      setScale(autoJune);
-    }
-  }, []);
 
   // MONTH NAVIGATION HANDLERS
   const handlePrevMonth = () => {
@@ -201,79 +228,72 @@ export default function App() {
   };
 
   // 1. VOLUNTEERS MUTATIONS
-  const handleAddVolunteer = (name: string, phone: string, active: boolean) => {
-    const newVol: Volunteer = {
-      id: `vol-${Date.now()}`,
-      name,
-      phone,
-      active
-    };
-    setVolunteers(prev => [...prev, newVol]);
+  const handleAddVolunteer = async (name: string, phone: string, active: boolean) => {
+    const id = `vol-${Date.now()}`;
+    try {
+      await setDoc(doc(db, 'volunteers', id), { name, phone, active });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `volunteers/${id}`);
+    }
   };
 
-  const handleEditVolunteer = (id: string, name: string, phone: string, active: boolean) => {
-    setVolunteers(prev => prev.map(vol => {
-      if (vol.id === id) {
-        return { ...vol, name, phone, active };
-      }
-      return vol;
-    }));
+  const handleEditVolunteer = async (id: string, name: string, phone: string, active: boolean) => {
+    try {
+      await setDoc(doc(db, 'volunteers', id), { name, phone, active });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `volunteers/${id}`);
+    }
   };
 
-  const handleDeleteVolunteer = (id: string) => {
-    setVolunteers(prev => prev.filter(vol => vol.id !== id));
-    
-    // Clear associations in scale
-    setScale(prev => {
-      const updated = { ...prev };
-      for (const dStr of Object.keys(updated)) {
-        updated[dStr] = {
-          ...updated[dStr],
-          volunteers: updated[dStr].volunteers.filter(vId => vId !== id)
-        };
-      }
-      return updated;
-    });
+  const handleDeleteVolunteer = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'volunteers', id));
+      await deleteDoc(doc(db, 'availability', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `volunteers/${id}`);
+    }
   };
 
-  const handleToggleActive = (id: string) => {
-    setVolunteers(prev => prev.map(vol => {
-      if (vol.id === id) {
-        return { ...vol, active: !vol.active };
+  const handleToggleActive = async (id: string) => {
+    const target = volunteers.find(v => v.id === id);
+    if (target) {
+      try {
+        await setDoc(doc(db, 'volunteers', id), {
+          name: target.name,
+          phone: target.phone,
+          active: !target.active
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `volunteers/${id}`);
       }
-      return vol;
-    }));
+    }
   };
 
   // 2. AVAILABILITY MUTATIONS
-  const handleUpdateAvailability = (volunteerId: string, dateStr: string, isAvailable: boolean) => {
-    setAvailability(prev => {
-      const volMap = prev[volunteerId] || {};
-      return {
-        ...prev,
-        [volunteerId]: {
-          ...volMap,
-          [dateStr]: isAvailable
-        }
-      };
-    });
+  const handleUpdateAvailability = async (volunteerId: string, dateStr: string, isAvailable: boolean) => {
+    try {
+      const volMap = availability[volunteerId] || {};
+      const newDates = { ...volMap, [dateStr]: isAvailable };
+      await setDoc(doc(db, 'availability', volunteerId), { dates: newDates });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `availability/${volunteerId}`);
+    }
   };
 
-  const handleSetBulkAvailability = (volunteerId: string, dates: string[], isAvailable: boolean) => {
-    setAvailability(prev => {
-      const volMap = { ...(prev[volunteerId] || {}) };
+  const handleSetBulkAvailability = async (volunteerId: string, dates: string[], isAvailable: boolean) => {
+    try {
+      const volMap = { ...(availability[volunteerId] || {}) };
       for (const dateStr of dates) {
         volMap[dateStr] = isAvailable;
       }
-      return {
-        ...prev,
-        [volunteerId]: volMap
-      };
-    });
+      await setDoc(doc(db, 'availability', volunteerId), { dates: volMap });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `availability/${volunteerId}`);
+    }
   };
 
   // 3. SCALE CALENDAR MUTATIONS
-  const handleGenerateScale = () => {
+  const handleGenerateScale = async () => {
     const activeVols = volunteers.filter(v => v.active);
     if (activeVols.length === 0) {
       alert("Nenhum voluntário ativo registado. Registe e ative membros para gerar escalas!");
@@ -286,59 +306,79 @@ export default function App() {
       scale,
       availability
     );
-    setScale(updatedScale);
-  };
-
-  const handleClearScale = () => {
-    // Empty ALL slot allocations of current month weekends that are NOT locked!
-    setScale(prev => {
-      const cleaned = { ...prev };
+    
+    try {
+      const promises = [];
       for (const w of currentWeekends) {
-        if (!cleaned[w.fridayStr]?.locked) {
-          cleaned[w.fridayStr] = { volunteers: [], locked: false };
+        if (updatedScale[w.fridayStr]) {
+          promises.push(setDoc(doc(db, 'scale', w.fridayStr), {
+            volunteers: updatedScale[w.fridayStr].volunteers || [],
+            locked: updatedScale[w.fridayStr].locked || false
+          }));
         }
-        if (!cleaned[w.saturdayStr]?.locked) {
-          cleaned[w.saturdayStr] = { volunteers: [], locked: false };
+        if (updatedScale[w.saturdayStr]) {
+          promises.push(setDoc(doc(db, 'scale', w.saturdayStr), {
+            volunteers: updatedScale[w.saturdayStr].volunteers || [],
+            locked: updatedScale[w.saturdayStr].locked || false
+          }));
         }
       }
-      return cleaned;
-    });
+      await Promise.all(promises);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'scale');
+    }
   };
 
-  const handleToggleLock = (dateStr: string) => {
-    setScale(prev => {
-      const turn = prev[dateStr] || { volunteers: [], locked: false };
-      return {
-        ...prev,
-        [dateStr]: {
-          ...turn,
-          locked: !turn.locked
+  const handleClearScale = async () => {
+    try {
+      const promises = [];
+      for (const w of currentWeekends) {
+        if (!scale[w.fridayStr]?.locked) {
+          promises.push(setDoc(doc(db, 'scale', w.fridayStr), {
+            volunteers: [],
+            locked: false
+          }));
         }
-      };
-    });
+        if (!scale[w.saturdayStr]?.locked) {
+          promises.push(setDoc(doc(db, 'scale', w.saturdayStr), {
+            volunteers: [],
+            locked: false
+          }));
+        }
+      }
+      await Promise.all(promises);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'scale');
+    }
   };
 
-  const handleSwapVolunteer = (dateStr: string, slotIndex: number, volunteerId: string) => {
-    setScale(prev => {
-      const turn = prev[dateStr] || { volunteers: [], locked: false };
+  const handleToggleLock = async (dateStr: string) => {
+    try {
+      const turn = scale[dateStr] || { volunteers: [], locked: false };
+      await setDoc(doc(db, 'scale', dateStr), {
+        volunteers: turn.volunteers || [],
+        locked: !turn.locked
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `scale/${dateStr}`);
+    }
+  };
+
+  const handleSwapVolunteer = async (dateStr: string, slotIndex: number, volunteerId: string) => {
+    try {
+      const turn = scale[dateStr] || { volunteers: [], locked: false };
       const currentVolunteers = [...(turn.volunteers || [])];
-      
-      // Pad Array to make sure target slotIndex exists
       while (currentVolunteers.length <= slotIndex) {
         currentVolunteers.push("");
       }
-      
       currentVolunteers[slotIndex] = volunteerId;
-      
-      // Filter out trailing blanks to keep state clean, but maintain structure
-      return {
-        ...prev,
-        [dateStr]: {
-          ...turn,
-          volunteers: currentVolunteers
-        }
-      };
-    });
+      await setDoc(doc(db, 'scale', dateStr), {
+        volunteers: currentVolunteers,
+        locked: turn.locked || false
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `scale/${dateStr}`);
+    }
   };
 
   // QUICK STATS summary for current month
