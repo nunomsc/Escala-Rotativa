@@ -45,8 +45,8 @@ const DEFAULT_VOLUNTEERS: Volunteer[] = [
 ];
 
 export default function App() {
-  const currentYear = 2026;
-  const [currentMonthIndex, setCurrentMonthIndex] = useState(4); // Default to May 2026 (index 4)
+  const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
+  const [currentMonthIndex, setCurrentMonthIndex] = useState(() => new Date().getMonth());
   const [activeTab, setActiveTab] = useState<'escala' | 'equipe' | 'disponibilidades'>('escala');
   
   // 0.0. STATE - AUTHENTICATION GATED SYSTEM
@@ -112,8 +112,12 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  // Hardcode constant today within year 2026 context
-  const todayDate = useMemo(() => new Date(2026, 4, 26, 12, 0, 0), []);
+  // Use current real date dynamically
+  const todayDate = useMemo(() => {
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    return d;
+  }, []);
 
   // 1. STATE - VOLUNTEERS
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
@@ -209,18 +213,30 @@ export default function App() {
     return () => unsubscribe();
   }, [isAuthenticated]);
 
-  // Recalculate weekends whenever month change
+  // Recalculate weekends whenever month or year change
   const currentWeekends = useMemo(() => {
     return getWeekendsOfMonth(currentYear, currentMonthIndex);
-  }, [currentMonthIndex]);
+  }, [currentMonthIndex, currentYear]);
 
   // MONTH NAVIGATION HANDLERS
   const handlePrevMonth = () => {
-    setCurrentMonthIndex((prev) => (prev === 0 ? 11 : prev - 1));
+    setCurrentMonthIndex((prev) => {
+      if (prev === 0) {
+        setCurrentYear((yr) => yr - 1);
+        return 11;
+      }
+      return prev - 1;
+    });
   };
 
   const handleNextMonth = () => {
-    setCurrentMonthIndex((prev) => (prev === 11 ? 0 : prev + 1));
+    setCurrentMonthIndex((prev) => {
+      if (prev === 11) {
+        setCurrentYear((yr) => yr + 1);
+        return 0;
+      }
+      return prev + 1;
+    });
   };
 
   const handleMonthSelect = (idx: number) => {

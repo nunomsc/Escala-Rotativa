@@ -1,18 +1,20 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import localConfig from '../../firebase-applet-config.json';
+// Load local configuration file gracefully if it exists
+const configs = (import.meta as any).glob('../../firebase-applet-config.json', { eager: true });
+const localConfig: any = Object.keys(configs).length > 0 ? (configs[Object.keys(configs)[0]] as any).default : {};
 
 const metaEnv = (import.meta as any).env || {};
 
 const firebaseConfig = {
-  apiKey: metaEnv.VITE_FIREBASE_API_KEY || localConfig.apiKey,
-  authDomain: metaEnv.VITE_FIREBASE_AUTH_DOMAIN || localConfig.authDomain,
-  projectId: metaEnv.VITE_FIREBASE_PROJECT_ID || localConfig.projectId,
-  storageBucket: metaEnv.VITE_FIREBASE_STORAGE_BUCKET || localConfig.storageBucket,
-  messagingSenderId: metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || localConfig.messagingSenderId,
-  appId: metaEnv.VITE_FIREBASE_APP_ID || localConfig.appId,
-  firestoreDatabaseId: metaEnv.VITE_FIREBASE_DATABASE_ID || localConfig.firestoreDatabaseId || (localConfig as any).firestoreDatabaseId,
+  apiKey: metaEnv.VITE_FIREBASE_API_KEY || localConfig.apiKey || '',
+  authDomain: metaEnv.VITE_FIREBASE_AUTH_DOMAIN || localConfig.authDomain || '',
+  projectId: metaEnv.VITE_FIREBASE_PROJECT_ID || localConfig.projectId || '',
+  storageBucket: metaEnv.VITE_FIREBASE_STORAGE_BUCKET || localConfig.storageBucket || '',
+  messagingSenderId: metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || localConfig.messagingSenderId || '',
+  appId: metaEnv.VITE_FIREBASE_APP_ID || localConfig.appId || '',
+  firestoreDatabaseId: metaEnv.VITE_FIREBASE_DATABASE_ID || localConfig.firestoreDatabaseId || (localConfig as any).firestoreDatabaseId || '',
 };
 
 const app = initializeApp(firebaseConfig);
