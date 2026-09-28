@@ -50,6 +50,26 @@ export function parseLocalDateString(dateStr: string): Date {
 export function getWeekendsOfMonth(year: number, monthIndex: number): ScheduledWeekend[] {
   const weekends: ScheduledWeekend[] = [];
   
+  // If the 1st day of the month is a Saturday, the weekend started on Friday (the last day of the previous month)
+  const firstDay = new Date(year, monthIndex, 1, 12, 0, 0);
+  if (firstDay.getDay() === 6) {
+    const friday = new Date(year, monthIndex, 0, 12, 0, 0);
+    const saturday = firstDay;
+    const fridayStr = toLocalDateString(friday);
+    const saturdayStr = toLocalDateString(saturday);
+    const fDay = friday.getDate().toString().padStart(2, '0');
+    const fMon = (friday.getMonth() + 1).toString().padStart(2, '0');
+    const sDay = saturday.getDate().toString().padStart(2, '0');
+    const sMon = (saturday.getMonth() + 1).toString().padStart(2, '0');
+    weekends.push({
+      fridayStr,
+      saturdayStr,
+      fridayDate: friday,
+      saturdayDate: saturday,
+      label: `Fim de Semana — Sex, ${fDay}/${fMon} e Sáb, ${sDay}/${sMon}`
+    });
+  }
+
   // Start from day 1 to day 31
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
   
