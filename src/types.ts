@@ -21,6 +21,8 @@ export interface VolunteerAvailability {
 export interface ScaleTurn {
   volunteers: string[]; // List of volunteer IDs assigned to this date (max 2)
   locked: boolean;      // If template is locked, re-running automatic generation won't overwrite it
+  isEvent?: boolean;    // If true, this date is an Event day (all team on duty, no duos assigned)
+  eventName?: string;   // Optional event name, e.g. "ROCK DA VELHA" or "ÉDEN"
 }
 
 export interface MonthlyScale {

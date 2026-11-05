@@ -83,7 +83,8 @@ export function generateAutomatedScale(
   const turnsToAssign: TurnInfo[] = [];
 
   weekends.forEach((w, wIdx) => {
-    if (!newScale[w.fridayStr]?.locked) {
+    // If turn is locked or is marked as an EVENT (where the whole team is on duty), do not assign duos
+    if (!newScale[w.fridayStr]?.locked && !newScale[w.fridayStr]?.isEvent) {
       turnsToAssign.push({
         dateStr: w.fridayStr,
         parentWeekend: w,
@@ -92,7 +93,7 @@ export function generateAutomatedScale(
         siblingDateStr: w.saturdayStr
       });
     }
-    if (!newScale[w.saturdayStr]?.locked) {
+    if (!newScale[w.saturdayStr]?.locked && !newScale[w.saturdayStr]?.isEvent) {
       turnsToAssign.push({
         dateStr: w.saturdayStr,
         parentWeekend: w,
@@ -103,11 +104,13 @@ export function generateAutomatedScale(
     }
   });
 
-  // Reset unlocked turns for clean generation
+  // Reset unlocked, non-event turns for clean generation
   for (const turn of turnsToAssign) {
     newScale[turn.dateStr] = {
       volunteers: [],
-      locked: false
+      locked: false,
+      isEvent: false,
+      eventName: ''
     };
   }
 
@@ -129,7 +132,7 @@ export function generateAutomatedScale(
     if (isRegenerating) continue;
 
     const turn = currentScale[dStr];
-    if (!turn || !turn.volunteers) continue;
+    if (!turn || !turn.volunteers || turn.isEvent) continue;
 
     const assigned = turn.volunteers.filter(vId => activeIds.has(vId));
     for (const vId of assigned) {
@@ -163,7 +166,7 @@ export function generateAutomatedScale(
 
   for (const w of weekends) {
     for (const dStr of [w.fridayStr, w.saturdayStr]) {
-      if (newScale[dStr]?.locked) {
+      if (newScale[dStr]?.locked && !newScale[dStr]?.isEvent) {
         const assigned = (newScale[dStr]?.volunteers || []).filter(vId => activeIds.has(vId));
         for (const vId of assigned) {
           currentMonthCounts[vId] = (currentMonthCounts[vId] || 0) + 1;

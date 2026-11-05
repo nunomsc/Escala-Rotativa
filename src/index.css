@@ -30,17 +30,30 @@ html, body {
 }
 
 @media print {
+  @page {
+    size: landscape;
+    margin: 8mm;
+  }
+
+  /* Force background colors to print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   /* Hide every single element in the DOM by default */
   body * {
     visibility: hidden;
   }
   
-  /* Make only the sheets container and its descendents visible */
+  /* Make printable sheets and their descendents visible */
+  #printable-matrix-sheet, #printable-matrix-sheet *,
   #printable-report-sheet, #printable-report-sheet * {
     visibility: visible;
   }
   
   /* Reset layout constraints for printer context */
+  #printable-matrix-sheet,
   #printable-report-sheet {
     position: absolute;
     left: 0;
@@ -57,8 +70,6 @@ html, body {
   html, body {
     background-color: #ffffff !important;
     color: #000000 !important;
-    font-size: 11pt !important;
-    line-height: 1.3 !important;
     margin: 0 !important;
     padding: 0 !important;
   }

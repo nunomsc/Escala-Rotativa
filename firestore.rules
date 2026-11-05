@@ -45,10 +45,12 @@ service cloud.firestore {
     // ScaleTurn Schema Validation
     function isValidScaleTurn(data) {
       return data.keys().hasAll(['volunteers', 'locked'])
-        && data.keys().size() == 2
+        && data.keys().hasOnly(['volunteers', 'locked', 'isEvent', 'eventName'])
         && data.volunteers is list
         && data.volunteers.size() <= 20
-        && data.locked is bool;
+        && data.locked is bool
+        && (!('isEvent' in data) || data.isEvent is bool)
+        && (!('eventName' in data) || (data.eventName is string && data.eventName.size() <= 128));
     }
 
     // Paths
