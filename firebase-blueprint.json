@@ -50,6 +50,14 @@
         "locked": {
           "type": "boolean",
           "description": "Whether this day is locked from auto-generation"
+        },
+        "isEvent": {
+          "type": "boolean",
+          "description": "Whether this day is an event (entire team on duty)"
+        },
+        "eventName": {
+          "type": "string",
+          "description": "Custom name of the event"
         }
       },
       "required": [

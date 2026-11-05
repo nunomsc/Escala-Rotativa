@@ -20,6 +20,21 @@ export const MONTHS_PT = [
   "Dezembro"
 ];
 
+export const MONTHS_SHORT_PT = [
+  "jan",
+  "fev",
+  "mar",
+  "abr",
+  "mai",
+  "jun",
+  "jul",
+  "ago",
+  "set",
+  "out",
+  "nov",
+  "dez"
+];
+
 export const DAYS_OF_WEEK_PT = [
   "Domingo",
   "Segunda-feira",
@@ -129,4 +144,20 @@ export function formatDateShortPt(dateStr: string): string {
 export function getWhatsappLink(phone: string, text: string): string {
   const cleanPhone = phone.replace(/\D/g, '');
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
+}
+
+/**
+ * Formats a local date string for the official PDF matrix table:
+ * dayName: "SEXTA" or "SÁBADO"
+ * dateFormatted: "06/nov", "07/nov"
+ */
+export function formatDateMatrixPt(dateStr: string): { dayName: string; dateFormatted: string } {
+  const date = parseLocalDateString(dateStr);
+  const dayName = date.getDay() === 5 ? "SEXTA" : "SÁBADO";
+  const day = date.getDate().toString().padStart(2, '0');
+  const monthShort = MONTHS_SHORT_PT[date.getMonth()];
+  return {
+    dayName,
+    dateFormatted: `${day}/${monthShort}`
+  };
 }

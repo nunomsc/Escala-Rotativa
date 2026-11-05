@@ -203,7 +203,9 @@ export default function App() {
           const docData = docSnap.data();
           scaleMap[docSnap.id] = {
             volunteers: docData.volunteers || [],
-            locked: docData.locked || false
+            locked: docData.locked || false,
+            isEvent: docData.isEvent || false,
+            eventName: docData.eventName || ''
           };
         });
         setScale(scaleMap);
@@ -406,13 +408,17 @@ export default function App() {
         if (updatedScale[w.fridayStr]) {
           newScale[w.fridayStr] = {
             volunteers: updatedScale[w.fridayStr].volunteers || [],
-            locked: updatedScale[w.fridayStr].locked || false
+            locked: updatedScale[w.fridayStr].locked || false,
+            isEvent: updatedScale[w.fridayStr].isEvent || false,
+            eventName: updatedScale[w.fridayStr].eventName || ''
           };
         }
         if (updatedScale[w.saturdayStr]) {
           newScale[w.saturdayStr] = {
             volunteers: updatedScale[w.saturdayStr].volunteers || [],
-            locked: updatedScale[w.saturdayStr].locked || false
+            locked: updatedScale[w.saturdayStr].locked || false,
+            isEvent: updatedScale[w.saturdayStr].isEvent || false,
+            eventName: updatedScale[w.saturdayStr].eventName || ''
           };
         }
       }
@@ -427,13 +433,17 @@ export default function App() {
         if (updatedScale[w.fridayStr]) {
           promises.push(setDoc(doc(db, 'scale', w.fridayStr), {
             volunteers: updatedScale[w.fridayStr].volunteers || [],
-            locked: updatedScale[w.fridayStr].locked || false
+            locked: updatedScale[w.fridayStr].locked || false,
+            isEvent: updatedScale[w.fridayStr].isEvent || false,
+            eventName: updatedScale[w.fridayStr].eventName || ''
           }));
         }
         if (updatedScale[w.saturdayStr]) {
           promises.push(setDoc(doc(db, 'scale', w.saturdayStr), {
             volunteers: updatedScale[w.saturdayStr].volunteers || [],
-            locked: updatedScale[w.saturdayStr].locked || false
+            locked: updatedScale[w.saturdayStr].locked || false,
+            isEvent: updatedScale[w.saturdayStr].isEvent || false,
+            eventName: updatedScale[w.saturdayStr].eventName || ''
           }));
         }
       }
@@ -447,11 +457,11 @@ export default function App() {
     if (!isFirebaseConfigured) {
       const newScale = { ...scale };
       for (const w of currentWeekends) {
-        if (!scale[w.fridayStr]?.locked) {
-          newScale[w.fridayStr] = { volunteers: [], locked: false };
+        if (!scale[w.fridayStr]?.locked && !scale[w.fridayStr]?.isEvent) {
+          newScale[w.fridayStr] = { volunteers: [], locked: false, isEvent: false, eventName: '' };
         }
-        if (!scale[w.saturdayStr]?.locked) {
-          newScale[w.saturdayStr] = { volunteers: [], locked: false };
+        if (!scale[w.saturdayStr]?.locked && !scale[w.saturdayStr]?.isEvent) {
+          newScale[w.saturdayStr] = { volunteers: [], locked: false, isEvent: false, eventName: '' };
         }
       }
       setScale(newScale);
@@ -462,16 +472,20 @@ export default function App() {
     try {
       const promises = [];
       for (const w of currentWeekends) {
-        if (!scale[w.fridayStr]?.locked) {
+        if (!scale[w.fridayStr]?.locked && !scale[w.fridayStr]?.isEvent) {
           promises.push(setDoc(doc(db, 'scale', w.fridayStr), {
             volunteers: [],
-            locked: false
+            locked: false,
+            isEvent: false,
+            eventName: ''
           }));
         }
-        if (!scale[w.saturdayStr]?.locked) {
+        if (!scale[w.saturdayStr]?.locked && !scale[w.saturdayStr]?.isEvent) {
           promises.push(setDoc(doc(db, 'scale', w.saturdayStr), {
             volunteers: [],
-            locked: false
+            locked: false,
+            isEvent: false,
+            eventName: ''
           }));
         }
       }
@@ -484,13 +498,16 @@ export default function App() {
   const handleToggleLock = async (dateStr: string) => {
     const turn = scale[dateStr] || { volunteers: [], locked: false };
     const nextLocked = !turn.locked;
+    const nextTurn = {
+      volunteers: turn.volunteers || [],
+      locked: nextLocked,
+      isEvent: turn.isEvent || false,
+      eventName: turn.eventName || ''
+    };
     if (!isFirebaseConfigured) {
       const newScale = {
         ...scale,
-        [dateStr]: {
-          volunteers: turn.volunteers || [],
-          locked: nextLocked
-        }
+        [dateStr]: nextTurn
       };
       setScale(newScale);
       localStorage.setItem(OFFLINE_SCALE_KEY, JSON.stringify(newScale));
@@ -498,10 +515,60 @@ export default function App() {
     }
 
     try {
-      await setDoc(doc(db, 'scale', dateStr), {
-        volunteers: turn.volunteers || [],
-        locked: nextLocked
-      });
+      await setDoc(doc(db, 'scale', dateStr), nextTurn);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `scale/${dateStr}`);
+    }
+  };
+
+  const handleToggleEvent = async (dateStr: string, isEvent: boolean, eventName?: string) => {
+    const turn = scale[dateStr] || { volunteers: [], locked: false };
+    const defaultName = eventName !== undefined ? eventName : (turn.eventName || 'EVENTO');
+    const nextTurn = {
+      volunteers: isEvent ? [] : turn.volunteers, // When marked as event, no duos assigned (handled by whole team)
+      locked: isEvent ? true : turn.locked,      // Event days are protected
+      isEvent,
+      eventName: isEvent ? defaultName : ''
+    };
+
+    if (!isFirebaseConfigured) {
+      const newScale = {
+        ...scale,
+        [dateStr]: nextTurn
+      };
+      setScale(newScale);
+      localStorage.setItem(OFFLINE_SCALE_KEY, JSON.stringify(newScale));
+      return;
+    }
+
+    try {
+      await setDoc(doc(db, 'scale', dateStr), nextTurn);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `scale/${dateStr}`);
+    }
+  };
+
+  const handleUpdateEventName = async (dateStr: string, eventName: string) => {
+    const turn = scale[dateStr] || { volunteers: [], locked: false };
+    const nextTurn = {
+      volunteers: [],
+      locked: true,
+      isEvent: true,
+      eventName
+    };
+
+    if (!isFirebaseConfigured) {
+      const newScale = {
+        ...scale,
+        [dateStr]: nextTurn
+      };
+      setScale(newScale);
+      localStorage.setItem(OFFLINE_SCALE_KEY, JSON.stringify(newScale));
+      return;
+    }
+
+    try {
+      await setDoc(doc(db, 'scale', dateStr), nextTurn);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `scale/${dateStr}`);
     }
@@ -514,14 +581,17 @@ export default function App() {
       currentVolunteers.push("");
     }
     currentVolunteers[slotIndex] = volunteerId;
+    const nextTurn = {
+      volunteers: currentVolunteers,
+      locked: turn.locked || false,
+      isEvent: false,
+      eventName: ''
+    };
 
     if (!isFirebaseConfigured) {
       const newScale = {
         ...scale,
-        [dateStr]: {
-          volunteers: currentVolunteers,
-          locked: turn.locked || false
-        }
+        [dateStr]: nextTurn
       };
       setScale(newScale);
       localStorage.setItem(OFFLINE_SCALE_KEY, JSON.stringify(newScale));
@@ -529,10 +599,7 @@ export default function App() {
     }
 
     try {
-      await setDoc(doc(db, 'scale', dateStr), {
-        volunteers: currentVolunteers,
-        locked: turn.locked || false
-      });
+      await setDoc(doc(db, 'scale', dateStr), nextTurn);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `scale/${dateStr}`);
     }
@@ -542,8 +609,9 @@ export default function App() {
   const currentMonthStats = useMemo(() => {
     const activeCount = volunteers.filter(v => v.active).length;
     
-    // Count assigned shifts this month
-    let totalAssignments = 0;
+    // Count assigned shifts and covered slots this month
+    let coveredSlots = 0;
+    let eventDaysCount = 0;
     let lockedTurnsCount = 0;
     const currentMonthDates = new Set<string>();
     for (const w of currentWeekends) {
@@ -551,25 +619,31 @@ export default function App() {
       currentMonthDates.add(w.saturdayStr);
     }
 
-    for (const dStr of Object.keys(scale)) {
-      if (currentMonthDates.has(dStr)) {
-        totalAssignments += (scale[dStr]?.volunteers?.filter(id => !!id).length || 0);
-        if (scale[dStr]?.locked) {
-          lockedTurnsCount++;
-        }
+    for (const dStr of currentMonthDates) {
+      const turn = scale[dStr];
+      if (turn?.isEvent) {
+        eventDaysCount++;
+        // Dias de evento são assegurados por toda a equipa (cobrem a totalidade das 2 vagas)
+        coveredSlots += 2;
+      } else {
+        coveredSlots += (turn?.volunteers?.filter(id => !!id).length || 0);
+      }
+      if (turn?.locked) {
+        lockedTurnsCount++;
       }
     }
 
     const totalPossibleSlots = currentWeekends.length * 4; // 2 days * 2 slots = 4 slots per weekend
     const coveragePercent = totalPossibleSlots > 0 
-      ? Math.round((totalAssignments / totalPossibleSlots) * 100) 
+      ? Math.round((coveredSlots / totalPossibleSlots) * 100) 
       : 0;
 
     return {
       activeCount,
-      totalAssignments,
+      totalAssignments: coveredSlots,
       coveragePercent,
-      lockedTurnsCount
+      lockedTurnsCount,
+      eventDaysCount
     };
   }, [volunteers, scale, currentWeekends]);
 
@@ -805,8 +879,10 @@ export default function App() {
               <Award size={16} className="stroke-[2.5]" />
             </div>
             <div>
-              <span className="text-[10px] text-[#49454F] dark:text-[#CAC4D0] font-bold uppercase tracking-wider block">Ocupados</span>
-              <span className="text-base font-black text-[#1D1B20] dark:text-[#E6E1E5]">{currentMonthStats.totalAssignments} vagas</span>
+              <span className="text-[10px] text-[#49454F] dark:text-[#CAC4D0] font-bold uppercase tracking-wider block">Assegurados</span>
+              <span className="text-base font-black text-[#1D1B20] dark:text-[#E6E1E5]">
+                {currentMonthStats.totalAssignments} de {currentWeekends.length * 4} vagas
+              </span>
             </div>
           </div>
 
@@ -837,8 +913,11 @@ export default function App() {
               onGenerateScale={handleGenerateScale}
               onClearScale={handleClearScale}
               onToggleLock={handleToggleLock}
+              onToggleEvent={handleToggleEvent}
+              onUpdateEventName={handleUpdateEventName}
               onSwapVolunteer={handleSwapVolunteer}
               todayDate={todayDate}
+              availability={availability}
             />
           )}
 

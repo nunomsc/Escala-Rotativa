@@ -19,7 +19,9 @@ import {
   CheckCircle,
   Clock,
   User,
-  Printer
+  Printer,
+  PartyPopper,
+  Sparkles
 } from 'lucide-react';
 import { ScaleReportModal } from './ScaleReportModal';
 
@@ -35,8 +37,11 @@ interface ScaleCalendarProps {
   onGenerateScale: () => void;
   onClearScale: () => void;
   onToggleLock: (dateStr: string) => void;
+  onToggleEvent?: (dateStr: string, isEvent: boolean, eventName?: string) => void;
+  onUpdateEventName?: (dateStr: string, eventName: string) => void;
   onSwapVolunteer: (dateStr: string, slotIndex: number, volunteerId: string) => void;
   todayDate: Date; // For finding upcoming weekend
+  availability?: { [volunteerId: string]: { [dateStr: string]: boolean } };
 }
 
 export function ScaleCalendar({
@@ -51,8 +56,11 @@ export function ScaleCalendar({
   onGenerateScale,
   onClearScale,
   onToggleLock,
+  onToggleEvent,
+  onUpdateEventName,
   onSwapVolunteer,
-  todayDate
+  todayDate,
+  availability
 }: ScaleCalendarProps) {
   
   const [isReportOpen, setIsReportOpen] = useState(false);
@@ -84,11 +92,25 @@ export function ScaleCalendar({
     nextWeekend = weekends[0]; // Fallback to first weekend
   }
 
-  // Generate combined whatsapp text for Friday or Saturday duos
+  // Generate whatsapp text for Friday or Saturday (duos or event)
   const sendDuoWhatsApp = (dateStr: string, isFriday: boolean) => {
     const scaleTurn = currentScale[dateStr];
-    const boysText = scaleTurn?.volunteers?.map(vId => getVolunteerName(vId)).join(' e ') || 'Ninguém';
     const dateFormatted = formatDateLongPt(dateStr);
+
+    if (scaleTurn?.isEvent) {
+      const eventTitle = scaleTurn.eventName || 'EVENTO';
+      const text = `Olá a todos! Convocatória oficial para o evento "${eventTitle}" em ${isFriday ? 'sexta-feira' : 'sábado'} (${dateFormatted}). Serviço assegurado por toda a equipa (TODOS DE SERVIÇO)! Contamos com a vossa presença.`;
+      
+      const firstActiveWithPhone = volunteers.find(v => v.active && v.phone);
+      if (firstActiveWithPhone) {
+        window.open(getWhatsappLink(firstActiveWithPhone.phone, text), '_blank');
+      } else {
+        alert('Nenhum voluntário ativo com telefone disponível.');
+      }
+      return;
+    }
+
+    const boysText = scaleTurn?.volunteers?.map(vId => getVolunteerName(vId)).join(' e ') || 'Ninguém';
     const text = `Olá! Venho confirmar a nossa escala de voluntários para ${isFriday ? 'sexta-feira' : 'sábado'} (${dateFormatted}). Elementos escalados: ${boysText}. Estão confirmados?`;
     
     // Send to first volunteer, or fallback
@@ -350,91 +372,158 @@ export function ScaleCalendar({
                   {days.map((day) => {
                     const turn = currentScale[day.dateStr] || { volunteers: [], locked: false };
                     const isLocked = turn.locked;
+                    const isEvent = !!turn.isEvent;
 
                     return (
                       <div 
                         key={day.dateStr}
                         id={`turn-card-${day.dateStr}`}
                         className={`border rounded-[20px] p-4 flex flex-col justify-between gap-4 transition-all hover:shadow-2xs ${
-                          isLocked 
-                            ? 'border-[#6750A4] dark:border-[#D0BCFF] bg-[#FEF7FF] dark:bg-[#25212C] ring-1 ring-[#6750A4]/15 dark:ring-[#D0BCFF]/15' 
-                            : 'border-[#E7E0EC] dark:border-[#49454F] bg-white dark:bg-[#232128]'
+                          isEvent
+                            ? 'border-[#002060] dark:border-[#9ec5f7] bg-[#F4F8FD] dark:bg-[#151D28] ring-1 ring-[#002060]/20'
+                            : isLocked 
+                              ? 'border-[#6750A4] dark:border-[#D0BCFF] bg-[#FEF7FF] dark:bg-[#25212C] ring-1 ring-[#6750A4]/15 dark:ring-[#D0BCFF]/15' 
+                              : 'border-[#E7E0EC] dark:border-[#49454F] bg-white dark:bg-[#232128]'
                         }`}
                       >
-                        {/* Title and Lock Button */}
+                        {/* Title and Action Buttons */}
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <span className="text-[10px] uppercase font-black tracking-widest text-[#6750A4] dark:text-[#D0BCFF]">
-                              {day.label}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] uppercase font-black tracking-widest text-[#6750A4] dark:text-[#D0BCFF]">
+                                {day.label}
+                              </span>
+                              {isEvent && (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider bg-[#002060] text-white px-2 py-0.5 rounded-full">
+                                  <PartyPopper size={10} />
+                                  Evento
+                                </span>
+                              )}
+                            </div>
                             <h5 className="text-sm font-bold text-[#1D1B20] dark:text-[#E6E1E5] mt-0.5">
                               {formatDateLongPt(day.dateStr)}
                             </h5>
                           </div>
 
-                          {/* Lock Trigger */}
-                          <button
-                            id={`btn-lock-turn-${day.dateStr}`}
-                            onClick={() => onToggleLock(day.dateStr)}
-                            title={isLocked ? "Desbloquear turno (Pode ser reescrito pela escala automática)" : "Bloquear turno (Protege esta escala de ser apagada no planeamento automático)"}
-                            className={`p-1.5 rounded-full border transition-all cursor-pointer ${
-                              isLocked 
-                                ? 'bg-[#EADDFF] dark:bg-[#4F378B] border-[#6750A4] dark:border-[#D0BCFF] text-[#21005D] dark:text-[#EADDFF]' 
-                                : 'bg-white dark:bg-[#2B2930] border-[#CAC4D0] dark:border-[#49454F] text-[#49454F] dark:text-[#CAC4D0] hover:bg-[#F3EDF7] dark:hover:bg-[#49454F]/40'
-                            }`}
-                          >
-                            {isLocked ? <Lock size={12} className="stroke-[2.5]" /> : <Unlock size={12} />}
-                          </button>
-                        </div>
+                          {/* Action Controls */}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {/* Event Toggle Button */}
+                            <button
+                              id={`btn-toggle-event-${day.dateStr}`}
+                              onClick={() => onToggleEvent?.(day.dateStr, !isEvent, turn.eventName || 'EVENTO')}
+                              title={isEvent ? "Remover evento e voltar à alocação de duplas" : "Definir este dia como Evento (Toda a equipa de serviço)"}
+                              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+                                isEvent
+                                  ? 'bg-[#002060] dark:bg-[#9ec5f7] border-[#002060] dark:border-[#9ec5f7] text-white dark:text-[#002060] shadow-xs'
+                                  : 'bg-white dark:bg-[#2B2930] border-[#CAC4D0] dark:border-[#49454F] text-[#49454F] dark:text-[#CAC4D0] hover:bg-[#F3EDF7] dark:hover:bg-[#49454F]/30 hover:text-[#002060] dark:hover:text-[#9ec5f7]'
+                              }`}
+                            >
+                              <PartyPopper size={12} />
+                              <span>{isEvent ? 'Evento' : '+ Evento'}</span>
+                            </button>
 
-                        {/* Volunteers Selection (Duo) */}
-                        <div className="space-y-3 bg-[#F3EDF7] dark:bg-[#1C1824] p-3.5 rounded-xl border border-[#CAC4D0]/30 dark:border-[#49454F]/30">
-                          <span className="text-[9px] uppercase font-extrabold tracking-widest text-[#49454F] dark:text-[#E6E1E5] block">
-                            Par de Voluntários Escalado:
-                          </span>
-                          
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {/* Slot 1 Selection */}
-                            <div className="space-y-1">
-                              <label className="text-[9px] font-bold text-[#625B71] dark:text-[#CAC4D0] uppercase tracking-wider block">Vaga 1</label>
-                              <select
-                                id={`select-vol-${day.dateStr}-0`}
-                                value={turn.volunteers[0] || ""}
-                                onChange={(e) => onSwapVolunteer(day.dateStr, 0, e.target.value)}
-                                className="w-full bg-white dark:bg-[#2B2930] border border-[#79747E] dark:border-[#49454F] text-xs font-semibold text-[#1D1B20] dark:text-[#E6E1E5] rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#6750A4] dark:focus:border-[#D0BCFF] focus:ring-1 focus:ring-[#6750A4]"
-                              >
-                                <option value="">(Vazio)</option>
-                                {volunteers.map(vol => (
-                                  <option key={vol.id} value={vol.id} className="dark:bg-[#2B2930]">
-                                    {vol.name} {!vol.active ? " (Inativo)" : ""}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {/* Slot 2 Selection */}
-                            <div className="space-y-1">
-                              <label className="text-[9px] font-bold text-[#625B71] dark:text-[#CAC4D0] uppercase tracking-wider block">Vaga 2</label>
-                              <select
-                                id={`select-vol-${day.dateStr}-1`}
-                                value={turn.volunteers[1] || ""}
-                                onChange={(e) => onSwapVolunteer(day.dateStr, 1, e.target.value)}
-                                className="w-full bg-white dark:bg-[#2B2930] border border-[#79747E] dark:border-[#49454F] text-xs font-semibold text-[#1D1B20] dark:text-[#E6E1E5] rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#6750A4] dark:focus:border-[#D0BCFF] focus:ring-1 focus:ring-[#6750A4]"
-                              >
-                                <option value="">(Vazio)</option>
-                                {volunteers.map(vol => (
-                                  <option key={vol.id} value={vol.id} className="dark:bg-[#2B2930]">
-                                    {vol.name} {!vol.active ? " (Inativo)" : ""}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
+                            {/* Lock Trigger */}
+                            <button
+                              id={`btn-lock-turn-${day.dateStr}`}
+                              onClick={() => onToggleLock(day.dateStr)}
+                              title={isLocked ? "Desbloquear turno" : "Bloquear turno"}
+                              className={`p-1.5 rounded-full border transition-all cursor-pointer ${
+                                isLocked 
+                                  ? 'bg-[#EADDFF] dark:bg-[#4F378B] border-[#6750A4] dark:border-[#D0BCFF] text-[#21005D] dark:text-[#EADDFF]' 
+                                  : 'bg-white dark:bg-[#2B2930] border-[#CAC4D0] dark:border-[#49454F] text-[#49454F] dark:text-[#CAC4D0] hover:bg-[#F3EDF7] dark:hover:bg-[#49454F]/40'
+                              }`}
+                            >
+                              {isLocked ? <Lock size={12} className="stroke-[2.5]" /> : <Unlock size={12} />}
+                            </button>
                           </div>
                         </div>
 
+                        {/* Turn Content: Event mode VS Regular Duo mode */}
+                        {isEvent ? (
+                          <div className="space-y-3 bg-white dark:bg-[#1E2837] p-3.5 rounded-xl border border-[#002060]/30 dark:border-[#9ec5f7]/30 shadow-2xs">
+                            <div className="flex items-center justify-between gap-2 border-b border-[#002060]/15 dark:border-[#9ec5f7]/15 pb-2">
+                              <span className="text-[10px] uppercase font-black tracking-widest text-[#002060] dark:text-[#9ec5f7] flex items-center gap-1.5">
+                                <Sparkles size={13} />
+                                Dia de Evento Especial
+                              </span>
+                              <span className="text-[10px] font-black text-[#002060] dark:text-[#9ec5f7] bg-[#9ec5f7]/30 dark:bg-[#9ec5f7]/20 px-2 py-0.5 rounded-md border border-[#002060]/20">
+                                TODOS DE SERVIÇO
+                              </span>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-[#49454F] dark:text-[#CAC4D0] uppercase tracking-wider block">
+                                Nome do Evento:
+                              </label>
+                              <input
+                                type="text"
+                                id={`input-event-name-${day.dateStr}`}
+                                value={turn.eventName || ''}
+                                placeholder='Ex: ROCK DA VELHA ou ÉDEN'
+                                onChange={(e) => onUpdateEventName?.(day.dateStr, e.target.value)}
+                                className="w-full bg-[#F8FAFD] dark:bg-[#141B26] border border-[#002060]/40 dark:border-[#9ec5f7]/40 text-xs font-bold text-[#002060] dark:text-[#E6E1E5] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#002060] dark:focus:ring-[#9ec5f7]"
+                              />
+                            </div>
+
+                            <p className="text-[11px] text-[#49454F] dark:text-[#CAC4D0] leading-snug">
+                              Serviço assegurado por toda a equipa. Não há alocação de duplas. No PDF oficial, este dia aparece em destaque vertical.
+                            </p>
+                          </div>
+                        ) : (
+                          /* Volunteers Selection (Duo) */
+                          <div className="space-y-3 bg-[#F3EDF7] dark:bg-[#1C1824] p-3.5 rounded-xl border border-[#CAC4D0]/30 dark:border-[#49454F]/30">
+                            <span className="text-[9px] uppercase font-extrabold tracking-widest text-[#49454F] dark:text-[#E6E1E5] block">
+                              Par de Voluntários Escalado:
+                            </span>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {/* Slot 1 Selection */}
+                              <div className="space-y-1">
+                                <label className="text-[9px] font-bold text-[#625B71] dark:text-[#CAC4D0] uppercase tracking-wider block">Vaga 1</label>
+                                <select
+                                  id={`select-vol-${day.dateStr}-0`}
+                                  value={turn.volunteers[0] || ""}
+                                  onChange={(e) => onSwapVolunteer(day.dateStr, 0, e.target.value)}
+                                  className="w-full bg-white dark:bg-[#2B2930] border border-[#79747E] dark:border-[#49454F] text-xs font-semibold text-[#1D1B20] dark:text-[#E6E1E5] rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#6750A4] dark:focus:border-[#D0BCFF] focus:ring-1 focus:ring-[#6750A4]"
+                                >
+                                  <option value="">(Vazio)</option>
+                                  {volunteers.map(vol => (
+                                    <option key={vol.id} value={vol.id} className="dark:bg-[#2B2930]">
+                                      {vol.name} {!vol.active ? " (Inativo)" : ""}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Slot 2 Selection */}
+                              <div className="space-y-1">
+                                <label className="text-[9px] font-bold text-[#625B71] dark:text-[#CAC4D0] uppercase tracking-wider block">Vaga 2</label>
+                                <select
+                                  id={`select-vol-${day.dateStr}-1`}
+                                  value={turn.volunteers[1] || ""}
+                                  onChange={(e) => onSwapVolunteer(day.dateStr, 1, e.target.value)}
+                                  className="w-full bg-white dark:bg-[#2B2930] border border-[#79747E] dark:border-[#49454F] text-xs font-semibold text-[#1D1B20] dark:text-[#E6E1E5] rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#6750A4] dark:focus:border-[#D0BCFF] focus:ring-1 focus:ring-[#6750A4]"
+                                >
+                                  <option value="">(Vazio)</option>
+                                  {volunteers.map(vol => (
+                                    <option key={vol.id} value={vol.id} className="dark:bg-[#2B2930]">
+                                      {vol.name} {!vol.active ? " (Inativo)" : ""}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Turn footer notifications */}
                         <div className="flex items-center justify-between border-t border-[#E7E0EC] dark:border-[#49454F] pt-2 text-xs">
-                          {isLocked ? (
+                          {isEvent ? (
+                            <span className="flex items-center gap-1 text-xs text-[#002060] dark:text-[#9ec5f7] font-black">
+                              <CheckCircle size={12} className="fill-[#002060] dark:fill-[#9ec5f7] text-white dark:text-[#002060]" />
+                              Todos de Serviço
+                            </span>
+                          ) : isLocked ? (
                             <span className="flex items-center gap-1 text-xs text-[#6750A4] dark:text-[#D0BCFF] font-black">
                               <CheckCircle size={12} className="fill-[#6750A4] dark:fill-[#D0BCFF] text-white dark:text-[#381E72]" />
                               Escala Protegida
@@ -443,14 +532,14 @@ export function ScaleCalendar({
                             <span className="text-gray-400 dark:text-[#938F99] font-medium italic">Edição Livre</span>
                           )}
 
-                          {turn.volunteers?.some(vId => !!vId) && (
+                          {(isEvent || turn.volunteers?.some(vId => !!vId)) && (
                             <button
                               id={`btn-wa-turn-${day.dateStr}`}
                               onClick={() => sendDuoWhatsApp(day.dateStr, day.isFriday)}
                               className="flex items-center gap-1 text-[#6750A4] dark:text-[#D0BCFF] hover:text-[#21005D] dark:hover:text-[#EADDFF] font-bold transition-all cursor-pointer"
                             >
                               <MessageSquare size={12} />
-                              Avisar Dupla
+                              {isEvent ? 'Avisar Equipa' : 'Avisar Dupla'}
                             </button>
                           )}
                         </div>
@@ -479,6 +568,7 @@ export function ScaleCalendar({
         currentScale={currentScale}
         currentYear={currentYear}
         currentMonthIndex={currentMonthIndex}
+        availability={availability}
       />
     </div>
   );
